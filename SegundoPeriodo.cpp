@@ -23,7 +23,7 @@
 
 using namespace std;
 
-class Esquinas {
+class Edges {
 public:
     GLint minY;
     GLint maxY;
@@ -31,9 +31,11 @@ public:
     GLint maxX;
     GLfloat xVal;
     GLfloat slope;
-    Esquinas(tuple<GLint, GLint> vertexOne, tuple<GLint, GLint> vertexTwo);
+    Edges(tuple<GLint, GLint> vertexOne, tuple<GLint, GLint> vertexTwo);
 };
-Esquinas::Esquinas(tuple<GLint, GLint> vertexOne, tuple<GLint, GLint> vertexTwo) {
+
+// Calculates neccessary values from two vertexes.
+Edges::Edges(tuple<GLint, GLint> vertexOne, tuple<GLint, GLint> vertexTwo) {
     this->minY = min(get<1>(vertexOne), get<1>(vertexTwo));
     this->maxY = max(get<1>(vertexOne), get<1>(vertexTwo));
     this->minX = min(get<0>(vertexOne), get<0>(vertexTwo));
@@ -45,13 +47,19 @@ Esquinas::Esquinas(tuple<GLint, GLint> vertexOne, tuple<GLint, GLint> vertexTwo)
     } else {
         this->xVal = get<0>(vertexTwo);
     }
+    
+    // Calculates scope, casting for float division.
     this->slope =
     static_cast<GLfloat>(static_cast<GLfloat>(get<1>(vertexOne) - get<1>(vertexTwo)))
     / static_cast<GLfloat>((get<0>(vertexOne) - get<0>(vertexTwo)));
 }
+
+// Structs.
+
+// Sort Edges by minY values and, if the same, then sort by minX values.
 struct less_than_key
 {
-    inline bool operator() (const Esquinas& struct1, const Esquinas& struct2)
+    inline bool operator() (const Edges& struct1, const Edges& struct2)
     {
         if (struct1.minY != struct2.minY)
             return (struct1.minY < struct2.minY);
@@ -59,35 +67,43 @@ struct less_than_key
     }
 };
 
+// Sorts Edges by current x values.
 struct by_x_val_key
 {
-    inline bool operator() (const Esquinas& struct1, const Esquinas& struct2)
+    inline bool operator() (const Edges& struct1, const Edges& struct2)
     {
         return (struct1.xVal < struct2.xVal);
     }
 };
 
-struct Color {
+// Stores color data for a single pixel.
+struct RGBType {
     GLfloat r;
     GLfloat g;
     GLfloat b;
 };
 
+// Globals
 int x_pos;
 int y_pos;
 int X_DOWN;
 GLint scanline;
 bool TOGGLE_STATE;
 bool MOUSE_STATE;
-bool DRAWING; 
+bool DRAWING; // Enables or disables user input.
 bool EDGE_PARITY;
-vector<tuple<GLint, GLint>> points; 
-vector<Esquinas> allEsquinas; 
-vector<Esquinas> activeEsquinas; 
-Color *pixels; 
+vector<tuple<GLint, GLint>> points; // Contains all the vertexes.
+vector<Edges> allEdges; // Contains every Edge.
+vector<Edges> activeEdges; // Contains Edges currently intersecting the scanline.
+RGBType *pixels; // Contains every pixel on the screen.
 
-void Colorear(GLfloat x1, GLfloat x2) {
+// Draws pixels from (x1, scanline) to (x2, scanline).
+int obtener_centro(vector<tuple<GLint, GLint>> puntos)
+{
 
+}
+void drawPixels(GLfloat x1, GLfloat x2) {
+    // round points, not floor, as we want the x values to change with the scanline.
     int i1 = roundf(x1);
     int i2 = roundf(x2);
     int count = 0;
@@ -97,34 +113,34 @@ void Colorear(GLfloat x1, GLfloat x2) {
         pixels[i].b = 0;
         pixels[i].g = 0;
         glutPostRedisplay();
-
+        //printf("change pixel %d, %d\n", (i1 + count), scanline);
     }
-
+    //printf("Pixels drawn.\n");
 }
 
-
-void removeActiveEsquinasByScanline() {
-    for (vector<Esquinas>::iterator it = activeEsquinas.begin(); it < activeEsquinas.end(); ) {
+// Removes edges from the Active Edges if the maxY of the edge is the same as the scanline.
+void removeActiveEdgesByScanline() {
+    for (vector<Edges>::iterator it = activeEdges.begin(); it < activeEdges.end(); ) {
         if (it->maxY == scanline) {
-            activeEsquinas.erase(it);
+            activeEdges.erase(it);
         } else {
             it++;
         }
     }
 }
 
-
+// Updates the x values of the Active Edges for the next scanline.
 void updateXValues() {
-    for (vector<Esquinas>::iterator it = activeEsquinas.begin(); it < activeEsquinas.end(); it++) {
+    for (vector<Edges>::iterator it = activeEdges.begin(); it < activeEdges.end(); it++) {
         it->xVal += (1/it->slope);
     }
 }
 
-
-void updateActiveEsquinas() {
-    for (vector<Esquinas>::iterator it = allEsquinas.begin(); it < allEsquinas.end(); it++) {
+// Adds new Active Edges from All Edges if the scanline reaches their minimum Y value.
+void updateActiveEdges() {
+    for (vector<Edges>::iterator it = allEdges.begin(); it < allEdges.end(); it++) {
         if (it->minY == scanline) {
-            activeEsquinas.push_back(*it);
+            activeEdges.push_back(*it);
         }
         if (it->minY > scanline) {
             return;
@@ -132,59 +148,62 @@ void updateActiveEsquinas() {
     }
 }
 
+// Set scanline value to the smallest Y value
 void initScanline() {
-    if (allEsquinas.size() != 0) {
-        scanline = allEsquinas.at(0).minY;
+    if (allEdges.size() != 0) {
+        scanline = allEdges.at(0).minY;
         glutPostRedisplay();
     }
 }
 
-
-void sortAndFilterEsquinas() {
-    sort(allEsquinas.begin(), allEsquinas.end(), less_than_key());
-    for (vector<Esquinas>::iterator it = allEsquinas.begin(); it < allEsquinas.end(); it++) {
-
+// Sort Edges to know which order the scanline hits them.
+void sortAndFilterEdges() {
+    sort(allEdges.begin(), allEdges.end(), less_than_key());
+    for (vector<Edges>::iterator it = allEdges.begin(); it < allEdges.end(); it++) {
+        // Don't need to deal with horizontal lines, as that's the direction we're scanning.
         if (it->slope == 0) {
-            allEsquinas.erase(it);
+            allEdges.erase(it);
         }
     }
 }
 
-void sortActiveEsquinasByXValues() {
-    sort(activeEsquinas.begin(), activeEsquinas.end(), by_x_val_key());
+void sortActiveEdgesByXValues() {
+    sort(activeEdges.begin(), activeEdges.end(), by_x_val_key());
 }
 
-
-void Llenar() {
-
-    while (activeEsquinas.size() != 0) {
-        for (vector<Esquinas>::iterator it = activeEsquinas.begin(); it < activeEsquinas.end(); it++) {
-            Colorear(it->xVal, (it+1)->xVal);
+// Actually fills the polygon, finds the intersections of the edges and the scanline, draws, and updates
+// the Edges.
+void fillPolygon() {
+    //printf("Filling...");
+    while (activeEdges.size() != 0) {
+        for (vector<Edges>::iterator it = activeEdges.begin(); it < activeEdges.end(); it++) {
+            //printf("drawing from %f to %f\n", it->xVal, (it+1)->xVal);
+            drawPixels(it->xVal, (it+1)->xVal);
             it++;
         }
         scanline++;
-        removeActiveEsquinasByScanline();
+        removeActiveEdgesByScanline();
         updateXValues();
-        updateActiveEsquinas();
-        sortActiveEsquinasByXValues();
+        updateActiveEdges();
+        sortActiveEdgesByXValues();
         glutPostRedisplay();
     }
 }
 
 void init(void) {
     
-
+    //Set background color
     glClearColor(1.0, 1.0, 1.0, 0.0);
     
-
+    //Initialize camera
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     glOrtho(0.0, 500, 500, 0.0, 0.0, 1.0);
     
-
-    pixels = new Color[500*500];
+    //Initialize RGB array
+    pixels = new RGBType[500*500];
     
-
+    // Set everything to white initially.
     for (int i = 0; i < 500*500; i++) {
         pixels[i].r = 1;
         pixels[i].g = 1;
@@ -194,31 +213,31 @@ void init(void) {
     DRAWING = false;
 }
 
-
+// Esc to exit.
 void keyboard(unsigned char key, int xmouse, int ymouse) {
     switch (key) {
         case 27:
             free(pixels);
-
+            //glutDestroyWindow(WINDOW_ID);
             exit(0);
             break;
     }
     glutPostRedisplay();
 }
 
-
+// Right click to complete polygon and kick off filling process.
 void menu(int id) {
     switch (id) {
         case 1:
         {
-            Esquinas newEdge(points.at(0), points.at(points.size()-1));
-            allEsquinas.push_back(newEdge);
-            sortAndFilterEsquinas();
+            Edges newEdge(points.at(0), points.at(points.size()-1));
+            allEdges.push_back(newEdge);
+            sortAndFilterEdges();
             initScanline();
-            updateActiveEsquinas();
+            updateActiveEdges();
             DRAWING = true;
             glutPostRedisplay();
-            Llenar();
+            fillPolygon();
             break;
         }
             
@@ -238,7 +257,7 @@ void menu(int id) {
             int p_i =(iz+der)/2;
             int p_j=(top+bot)/2;
             cout<<p_i<<"-----"<<p_j<<endl;
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);	
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);	// Clean the screen and the depth buffer
 	        glLoadIdentity();
             for (int i = 0; i < 500*500; i++) {
                 pixels[i].r = 1;
@@ -260,45 +279,89 @@ void menu(int id) {
                 get<1>(points[r])+=mov_y;
             }
 
-            allEsquinas.clear();
-            activeEsquinas.clear();
+            allEdges.clear();
+            activeEdges.clear();
             cout<<"$$$"<<endl;
             for(int a=0;a<points.size()-1;a++)
             {
                 cout<<get<0>(points[a])<<"-"<<get<1>(points[a])<<"|";
-                Esquinas newEdge (points[a],points[a+1]);
-                allEsquinas.push_back(newEdge);
+                Edges newEdge (points[a],points[a+1]);
+                allEdges.push_back(newEdge);
             }
-            Esquinas newEdge(points.at(0), points.at(points.size()-1));
-            allEsquinas.push_back(newEdge);
-            sortAndFilterEsquinas();
+            Edges newEdge(points.at(0), points.at(points.size()-1));
+            allEdges.push_back(newEdge);
+            sortAndFilterEdges();
             initScanline();
-            updateActiveEsquinas();
+            updateActiveEdges();
             DRAWING = true;
             glutPostRedisplay();
-            Llenar();
+            fillPolygon();
             break;
             
         }
         case 3:
         {
-            
+            int iz=999;int der=0;int top=999; int bot=0;
+            for (auto i : points)
+            {
+                
+                cout<<"Punto: "<<get<0>(i)<<"-"<<get<1>(i)<<endl;
+                if(get<0>(i)<iz) iz=get<0>(i);
+                if(get<0>(i)>der) der=get<0>(i);
+                if(get<1>(i)<top) top=get<1>(i);
+                if(get<1>(i)>bot) bot=get<1>(i);
+            } 
+            int p_i =(iz+der)/2;
+            int p_j=(top+bot)/2;
+            cout<<p_i<<"-----"<<p_j<<endl;
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);	// Clean the screen and the depth buffer
+	        glLoadIdentity();
+            for (int i = 0; i < 500*500; i++) {
+                pixels[i].r = 1;
+                pixels[i].g = 1;
+                pixels[i].b = 1;
+            }
+            cout<<"GLOBAL: "<<x_pos<<"-"<<y_pos<<endl;
+            int mov_x=x_pos-p_i;
+            int mov_y=y_pos-p_j;
+            cout<<"LOOK:";
+
+
+            allEdges.clear();
+            activeEdges.clear();
+            cout<<"$$$"<<endl;
+            for(int a=0;a<points.size()-1;a++)
+            {
+                cout<<get<0>(points[a])<<"-"<<get<1>(points[a])<<"|";
+                Edges newEdge (points[a],points[a+1]);
+                allEdges.push_back(newEdge);
+            }
+            Edges newEdge(points.at(0), points.at(points.size()-1));
+            allEdges.push_back(newEdge);
+            sortAndFilterEdges();
+            initScanline();
+            updateActiveEdges();
+            DRAWING = true;
+            glutPostRedisplay();
+            fillPolygon();
+            break;
         }
             
     }
     glutPostRedisplay();
 }
 
-
-void click(int button, int state, int x, int y) {
+// Stores vertexes on click.
+void mouse_down(int button, int state, int x, int y) {
     switch (button) {
         case GLUT_LEFT_BUTTON:
         {
             if(state == GLUT_DOWN && !DRAWING) {
+                printf("ADDING POINT %d and %d", x, 500 - y);
                 points.push_back(tuple<GLint, GLint>(x, y));
                 if (points.size() > 1) {
-                    Esquinas newEdge(points.at(points.size()-2), points.at(points.size()-1));
-                    allEsquinas.push_back(newEdge);
+                    Edges newEdge(points.at(points.size()-2), points.at(points.size()-1));
+                    allEdges.push_back(newEdge);
                 }
                 glutPostRedisplay();
             }
@@ -315,21 +378,25 @@ void click(int button, int state, int x, int y) {
 }
 
 void display(void) {
-
+    
+    //Print OpenGL errors
     GLenum err_code;
     do {
         err_code = glGetError();
         if (err_code != GL_NO_ERROR)
             printf("Error: %s\n", gluErrorString(err_code));
     } while (err_code != GL_NO_ERROR);
-
+    
+    //Clear buffer data
     glClear(GL_COLOR_BUFFER_BIT);
-
+    
+    //Draw pixels
     glDrawPixels(500, 500, GL_RGB, GL_FLOAT, pixels);
     
     glPointSize(5);
     glColor3f(1.0, 0.0, 1.0);
-
+    
+    // Draws points.
     if (!DRAWING) {
         for (int i = 0; i < points.size(); i++) {
             glBegin(GL_POINTS);
@@ -337,7 +404,8 @@ void display(void) {
             glEnd();
         }
     }
-
+    
+    // Draws the final polygon outline.
     if (DRAWING) {
         glDrawPixels(500, 500, GL_RGB, GL_FLOAT, pixels);
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
@@ -347,7 +415,8 @@ void display(void) {
         }
         glEnd();
     }
-
+    
+    //Flush data
     glFlush();
 }
 
@@ -359,17 +428,17 @@ int main(int argc, char** argv) {
     glutInitWindowSize(500, 500);
     glutInitWindowPosition(100, 100);
     
-    glutCreateWindow("Computacion Grafica");
+    glutCreateWindow("Assignment 1: Scan-line fill");
     
     init();
     glutDisplayFunc(display);
     glutKeyboardFunc(keyboard);
-    glutMouseFunc(click);
+    glutMouseFunc(mouse_down);
     
     glutCreateMenu(menu);
     glutAddMenuEntry("Dibujar poligono", 1);
     glutAddMenuEntry("Mover",2);
-    glutAddMenuEntry("Limpiar",3);
+    glutAddMenuEntry("Rotar",3);
     glutAttachMenu(GLUT_RIGHT_BUTTON);
     
     glutMainLoop();
